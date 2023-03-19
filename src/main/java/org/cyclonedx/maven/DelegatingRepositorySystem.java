@@ -114,8 +114,7 @@ class DelegatingRepositorySystem implements RepositorySystem {
     }
 
     @Override
-    public DependencyResult resolveDependencies(final RepositorySystemSession session, final DependencyRequest request)
-            throws DependencyResolutionException {
+    public DependencyResult resolveDependencies(final RepositorySystemSession session, final DependencyRequest request) {
         return delegate.resolveDependencies(session, request);
     }
 
