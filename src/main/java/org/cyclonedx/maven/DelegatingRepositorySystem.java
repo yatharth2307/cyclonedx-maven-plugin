@@ -114,8 +114,58 @@ class DelegatingRepositorySystem implements RepositorySystem {
     }
 
     @Override
-    public DependencyResult resolveDependencies(final RepositorySystemSession session, final DependencyRequest request) {
-        return delegate.resolveDependencies(session, request);
+    public DependencyResult resolveDependencies(RepositorySystemSession session, DependencyRequest request) {
+        validateSession(session);
+        requireNonNull(request, "request cannot be null");
+
+        RequestTrace trace = RequestTrace.newChild(request.getTrace(), request);
+
+        DependencyResult result = new DependencyResult(request);
+
+        DependencyCollectionException dce = null;
+        ArtifactResolutionException are = null;
+
+        if (request.getRoot() != null) {
+            result.setRoot(request.getRoot());
+        } else if (request.getCollectRequest() != null) {
+            CollectResult collectResult;
+            try {
+                request.getCollectRequest().setTrace(trace);
+                collectResult = dependencyCollector.collectDependencies(session, request.getCollectRequest());
+            } catch (DependencyCollectionException e) {
+                dce = e;
+                collectResult = e.getResult();
+            }
+            result.setRoot(collectResult.getRoot());
+            result.setCycles(collectResult.getCycles());
+            result.setCollectExceptions(collectResult.getExceptions());
+        } else {
+            throw new NullPointerException("dependency node and collect request cannot be null");
+        }
+
+        ArtifactRequestBuilder builder = new ArtifactRequestBuilder(trace);
+        DependencyFilter filter = request.getFilter();
+        DependencyVisitor visitor = (filter != null) ? new FilteringDependencyVisitor(builder, filter) : builder;
+        visitor = new TreeDependencyVisitor(visitor);
+
+        if (result.getRoot() != null) {
+            result.getRoot().accept(visitor);
+        }
+
+        List<ArtifactRequest> requests = builder.getRequests();
+
+        List<ArtifactResult> results;
+        try {
+            results = artifactResolver.resolveArtifacts(session, requests);
+        } catch (ArtifactResolutionException e) {
+            are = e;
+            results = e.getResults();
+        }
+        result.setArtifactResults(results);
+
+        updateNodesWithResolvedArtifacts(results);
+
+        return result;
     }
 
     @Override
